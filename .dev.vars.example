@@ -1,0 +1,4 @@
+HOUSEHOLD_CODE=generate-a-long-random-code
+VAPID_PUBLIC_KEY=your-generated-base64url-public-key
+VAPID_PRIVATE_KEY=your-generated-base64url-private-key
+VAPID_SUBJECT=mailto:your-email@example.com

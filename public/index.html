@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#6d45ef" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="ChorePop" />
+  <meta name="description" content="A joyful way to rotate household chores." />
+  <meta name="referrer" content="no-referrer" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+  <link rel="stylesheet" href="/styles.css" />
+  <title>ChorePop ✨ — Keep the home rolling</title>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div id="app" class="app-shell"><div class="loading-center"><span class="logo-mark">✦</span><p>Loading your household...</p></div></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <dialog id="dialog" class="sheet" aria-labelledby="dialog-title">
+    <form id="dialog-form" method="dialog">
+      <div class="sheet-head"><div><span class="eyebrow">MAKE IT HAPPEN</span><h2 id="dialog-title">Add a chore</h2></div><button type="button" id="close-dialog" class="icon-button" aria-label="Close">✕</button></div>
+      <div id="dialog-fields"></div>
+      <div class="dialog-actions"><button type="button" id="cancel-dialog" class="button secondary">Cancel</button><button type="submit" id="save-dialog" class="button primary">Save</button></div>
+    </form>
+  </dialog>
+</body>
+</html>
