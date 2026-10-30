@@ -11,7 +11,7 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "chorepop-db"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "badbed38-50cd-4759-a56a-0a4691001d3a"
 
 [triggers]
 crons = ["0 * * * *"]
