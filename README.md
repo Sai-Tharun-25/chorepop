@@ -8,6 +8,19 @@ Every chore has **its own** current assignee and moves through **the same shared
 
 Example: if People is `Alex → Ben → Casey → Dani → Eli`, a chore will go `Alex → Ben → Casey → Dani → Eli → Alex ...`. Each chore advances **only when its current assignee taps Done**, not by calendar date. You can choose the first member when creating a chore. Adding another member appends to the rotation; removing someone passes any chores currently assigned to that person to the next person. There are no due dates.
 
+### Early completion credits (v1.1)
+
+When someone else does a chore outside their turn, they select their own name and tap **⚡ I did it early**. They earn **one skip credit for that chore only**; the currently assigned member does **not** change and continues receiving reminders. When the volunteer's own turn comes around, ChorePop automatically skips that person **once**, consumes the credit, and assigns the turn to the next eligible member. Credits do not stack; a person can hold at most one credit per chore. The early completion appears in Activity. If everyone ahead in the queue has a credit, the app consumes those credits and resumes the normal cycle.
+
+**Upgrade an already deployed database before deploying this release:**
+
+```bash
+npx wrangler d1 execute chorepop-db --remote --file=./migrations/001_early_credits.sql
+npm run deploy
+```
+
+This migration adds tables without deleting existing members, chores or history. A new install can just use `npm run db:remote` as before; the new schema includes these tables.
+
 Push notifications (if enabled by each member):
 
 - Attempt immediately when a chore becomes your turn (either first assigned or handed off).

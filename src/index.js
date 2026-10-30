@@ -36,6 +36,22 @@ async function nextMember(db, memberId) {
     .bind(current.sort_order).first()) ||
     (await db.prepare('SELECT id, name FROM members ORDER BY sort_order LIMIT 1').first());
 }
+async function nextUncreditedMember(db, choreId, currentId) {
+  const members = await getMembers(db);
+  if (!members.length) return null;
+  const index = members.findIndex(m => m.id === currentId);
+  if (index < 0) return null;
+  const credits = (await db.prepare('SELECT member_id FROM skip_credits WHERE chore_id = ?').bind(choreId).all()).results || [];
+  const credited = new Set(credits.map(r => r.member_id));
+  const consumed = [];
+  for (let offset = 1; offset <= members.length; offset++) {
+    const person = members[(index + offset) % members.length];
+    if (!credited.has(person.id)) return { next: person, consumed };
+    consumed.push(person.id);
+  }
+  // Everyone was credited: consume the whole round and return to normal order.
+  return { next: members[(index + 1) % members.length], consumed };
+}
 async function memberExists(db, id) {
   return !!(await db.prepare('SELECT id FROM members WHERE id = ?').bind(id).first());
 }
@@ -85,9 +101,12 @@ async function api(request, env, ctx) {
   if (pathname === '/api/state' && method === 'GET') {
     const [members, chores, history] = await Promise.all([
       getMembers(db), getChores(db),
-      db.prepare('SELECT id, chore_title, member_id, member_name, done_at FROM history ORDER BY done_at DESC LIMIT 40').all()
+      db.prepare(`SELECT id, chore_title, member_id, member_name, done_at, 'turn' AS event_type FROM history
+        UNION ALL SELECT id, chore_title, member_id, member_name, done_at, 'early' AS event_type FROM early_completions
+        ORDER BY done_at DESC LIMIT 40`).all()
     ]);
-    return json({ members, chores, history: history.results || [], vapidPublicKey: env.VAPID_PUBLIC_KEY || null, now: Date.now() });
+    const credits = (await db.prepare('SELECT chore_id, member_id FROM skip_credits').all()).results || [];
+    return json({ members, chores, history: history.results || [], credits, vapidPublicKey: env.VAPID_PUBLIC_KEY || null, now: Date.now() });
   }
   if (pathname === '/api/members' && method === 'POST') {
     const body = await payload(request);
@@ -120,6 +139,7 @@ async function api(request, env, ctx) {
       await db.prepare(`UPDATE chores SET current_member_id = ?, turn_started_at = ?, last_reminder_at = NULL
         WHERE current_member_id = ?`).bind(replacement.id, now, memberId).run();
     }
+    await db.prepare('DELETE FROM skip_credits WHERE member_id = ?').bind(memberId).run();
     await db.prepare('DELETE FROM members WHERE id = ?').bind(memberId).run();
     for (const chore of allChores.filter(c => c.current_member_id === memberId)) notifyTurn(env, ctx, chore, replacement.id, replacement.name);
     return json({ ok: true });
@@ -150,13 +170,29 @@ async function api(request, env, ctx) {
     const changed = await db.prepare('DELETE FROM chores WHERE id = ?').bind(choreMatch[1]).run();
     return changed.meta.changes ? json({ ok: true }) : fail('Chore not found.', 404);
   }
+  const earlyMatch = pathname.match(/^\/api\/chores\/([a-z0-9-]+)\/early$/i);
+  if (earlyMatch && method === 'POST') {
+    const body = await payload(request);
+    const chore = await db.prepare('SELECT * FROM chores WHERE id = ?').bind(earlyMatch[1]).first();
+    if (!chore) return fail('Chore not found.', 404);
+    if (!isString(body.memberId, 80) || !(await memberExists(db, body.memberId))) return fail('Choose your name first.');
+    if (body.memberId === chore.current_member_id) return fail('It is your turn. Use Done instead.', 409);
+    const inserted = await db.prepare(`INSERT OR IGNORE INTO skip_credits (chore_id, member_id, earned_at) VALUES (?, ?, ?)`)
+      .bind(chore.id, body.memberId, Date.now()).run();
+    if (!inserted.meta.changes) return fail('You already have a skip credit for this chore.', 409);
+    const member = await db.prepare('SELECT name FROM members WHERE id = ?').bind(body.memberId).first();
+    await db.prepare(`INSERT INTO early_completions (id, chore_id, chore_title, member_id, member_name, done_at)
+      VALUES (?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), chore.id, chore.title, body.memberId, member.name, Date.now()).run();
+    return json({ ok: true, message: 'One skip credit earned. The current turn did not change.' });
+  }
   const completeMatch = pathname.match(/^\/api\/chores\/([a-z0-9-]+)\/complete$/i);
   if (completeMatch && method === 'POST') {
     const body = await payload(request);
     const chore = await db.prepare('SELECT * FROM chores WHERE id = ?').bind(completeMatch[1]).first();
     if (!chore) return fail('Chore not found.', 404);
     if (body.memberId !== chore.current_member_id) return fail('It is someone else’s turn! Refresh your board.', 409);
-    const next = await nextMember(db, chore.current_member_id);
+    const rotation = await nextUncreditedMember(db, chore.id, chore.current_member_id);
+    const next = rotation?.next;
     if (!next) return fail('Add a household member first.');
     const member = await db.prepare('SELECT name FROM members WHERE id = ?').bind(chore.current_member_id).first();
     const now = Date.now();
@@ -165,6 +201,9 @@ async function api(request, env, ctx) {
       WHERE id = ? AND current_member_id = ? AND turn_started_at = ? AND completed_count = ? RETURNING id`)
       .bind(next.id, now, chore.id, chore.current_member_id, chore.turn_started_at, chore.completed_count).first();
     if (!updated) return fail('This turn was already completed. Refresh your board.', 409);
+    for (const memberId of rotation.consumed) {
+      await db.prepare('DELETE FROM skip_credits WHERE chore_id = ? AND member_id = ?').bind(chore.id, memberId).run();
+    }
     await db.prepare(`INSERT INTO history (id, chore_id, chore_title, member_id, member_name, done_at)
       VALUES (?, ?, ?, ?, ?, ?)`).bind(crypto.randomUUID(), chore.id, chore.title, chore.current_member_id, member?.name || 'Former member', now).run();
     notifyTurn(env, ctx, chore, next.id, next.name);

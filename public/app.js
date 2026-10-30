@@ -113,7 +113,7 @@ function choreCard(chore, index, members) {
     <div class="card-top"><span class="emoji-tile c${index % 6}">${escapeHtml(chore.emoji)}</span><button class="card-menu" data-act="edit-chore" data-id="${chore.id}" aria-label="Edit ${escapeHtml(chore.title)}">···</button></div>
     <h3>${escapeHtml(chore.title)}</h3>
     ${mine ? `<span class="card-tag" style="align-self:flex-start;margin-top:6px">⭐ You're up!</span>` : ''}
-    <div class="card-bottom"><div class="assignment">${avatar(member, memberIndex)}<div><strong>${escapeHtml(member.name)}</strong><small>${age(chore.turn_started_at)} · ${chore.completed_count} done</small></div></div>${mine ? `<button class="button done mini" data-act="complete" data-id="${chore.id}">✓ Done!</button>` : `<span class="card-tag">On deck</span>`}</div>
+    <div class="card-bottom"><div class="assignment">${avatar(member, memberIndex)}<div><strong>${escapeHtml(member.name)}</strong><small>${age(chore.turn_started_at)} · ${chore.completed_count} done</small></div></div>${mine ? `<button class="button done mini" data-act="complete" data-id="${chore.id}">✓ Done!</button>` : state.me ? (state.data.credits?.some(x => x.chore_id === chore.id && x.member_id === state.me) ? `<span class="card-tag">🎟️ Skip earned</span>` : `<button class="button secondary mini" data-act="early" data-id="${chore.id}">⚡ I did it early</button>`) : `<span class="card-tag">On deck</span>`}</div>
     </article>`;
 }
 function notificationTip() {
@@ -130,8 +130,8 @@ function people(members, chores, history) {
   <p class="note">💡 Removing someone passes their current chores to the next person. All remaining members keep their relative order.</p></section>`;
 }
 function activity(history) {
-  return `<section class="board"><div class="toolbar"><div><div class="eyebrow" style="color:var(--purple)">HIGH FIVES ALL AROUND</div><h1 class="section-title" style="font-size:31px;margin-top:7px">Done & dusted ✨</h1><p class="subtext">Your latest 40 completed turns.</p></div></div>
-  ${history.length ? `<div class="activity">${history.map(h => `<article class="activity-item"><span class="activity-symbol">✓</span><div><p><strong>${escapeHtml(h.member_name)}</strong> finished <strong>${escapeHtml(h.chore_title)}</strong></p><small>${fmt(h.done_at)}</small></div></article>`).join('')}</div>` : `<div class="empty"><span class="empty-icon">🥳</span><h3>Great things start here</h3><p>Finished chores will show up here once you tap Done.</p></div>`}</section>`;
+  return `<section class="board"><div class="toolbar"><div><div class="eyebrow" style="color:var(--purple)">HIGH FIVES ALL AROUND</div><h1 class="section-title" style="font-size:31px;margin-top:7px">Done & dusted ✨</h1><p class="subtext">Your latest 40 completions, including early help.</p></div></div>
+  ${history.length ? `<div class="activity">${history.map(h => `<article class="activity-item"><span class="activity-symbol">✓</span><div><p><strong>${escapeHtml(h.member_name)}</strong> ${h.event_type === 'early' ? 'did an early completion of' : 'finished'} <strong>${escapeHtml(h.chore_title)}</strong>${h.event_type === 'early' ? ' ⚡ (skip credit)' : ''}</p><small>${fmt(h.done_at)}</small></div></article>`).join('')}</div>` : `<div class="empty"><span class="empty-icon">🥳</span><h3>Great things start here</h3><p>Finished chores will show up here once you tap Done.</p></div>`}</section>`;
 }
 function settings(me) {
   const supported = 'PushManager' in window && 'Notification' in window && 'serviceWorker' in navigator;
@@ -260,6 +260,17 @@ async function actions(event) {
   else if (act === 'invite') invite();
   else if (act === 'enable-push') enablePush();
   else if (act === 'disable-push') disablePush();
+  else if (act === 'early') {
+    if (!state.me) return alertToast('Select your name first.');
+    if (!confirm('Did you do this chore early? You will earn one skip for this chore, and the current assigned person will stay the same.')) return;
+    target.disabled = true;
+    try {
+      await callApi(`/chores/${id}/early`, { method: 'POST', body: JSON.stringify({ memberId: state.me }) });
+      alertToast('Great work! One skip earned ⚡');
+      await refresh();
+    } catch (err) { alertToast(err.message); await refresh(); }
+    finally { target.disabled = false; }
+  }
   else if (act === 'complete') {
     target.disabled = true;
     try {
